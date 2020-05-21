@@ -20,7 +20,7 @@ ui <- fluidPage(
         sidebarPanel(
           HTML("<p>ルール</p>"),
           HTML("<ol> <li> １～１４年目まで、まいとし何びきの魚をとるかきめてください
-                     <li> 15年目に50匹以上の魚をのこして、いちばんたくさんの数の魚をとった人が勝ちです </ol>"),
+                     <li> 15年目に50匹以上の魚をのこして、14年で合計200匹以上の魚をとったら勝ちです </ol>"),
           HTML("＊魚は、とってしまっても、卵から毎年新しい魚(白丸の魚)が生まれてきます<br><hr>"),  
           conditionalPanel(
                 condition = "input.start == false",
@@ -184,12 +184,25 @@ server <- function(input, output) {
                            input$year9,input$year10,input$year11,input$year12,
                            input$year13,input$year14)
 
-          catch_number_given[year_decision==FALSE] <- NA
+        catch_number_given[year_decision==FALSE] <- NA
+        
+        res <- pop_dyn(Fc=rep(0,100),R0=R0,M=M,nage=nage,nyear=nyear,init_number=init_number,
+                       interactive=TRUE,debug_mode=FALSE,shiny_mode=TRUE,
+                       fish_image="fish_isaki.png",xngrid=15,yngrid=8,
+                       catch_number_given=catch_number_given)      
+        
+        if(input$year14==TRUE){
+          final_color <- ifelse(sum(catch_number_given)>200 & sum(res$nfish[,15])>50, "yellow", "gray")        
+          final_image <- ifelse(sum(catch_number_given)>200 & sum(res$nfish[,15])>50, "win.png", "lose.png")        
           res <- pop_dyn(Fc=rep(0,100),R0=R0,M=M,nage=nage,nyear=nyear,init_number=init_number,
                        interactive=TRUE,debug_mode=FALSE,shiny_mode=TRUE,
                        fish_image="fish_isaki.png",xngrid=15,yngrid=8,
-                       catch_number_given=catch_number_given)
-          gridExtra::grid.arrange(res$g1,res$g2)
+                       catch_number_given=catch_number_given, background_color = final_color)
+          res$g1 <- res$g1 +
+            geom_image(data=tibble(x=15/2*10,y=8/2*10,img=final_image),
+                       aes(x=x, y=y, image=img),asp=3, size=1) 
+        }
+        gridExtra::grid.arrange(res$g1,res$g2)
     })
   
     # Downloadable csv of selected dataset ----
@@ -212,7 +225,6 @@ server <- function(input, output) {
                        interactive=TRUE,debug_mode=FALSE,shiny_mode=TRUE,
                        fish_image="fish_isaki.png",xngrid=15,yngrid=8,
                        catch_number_given=catch_number_given)
-        
         char_name <- as.character(input$name)
         res <- as_tibble(t(res$nfish)) %>%
           mutate(catch=res$catch_number, name=char_name)

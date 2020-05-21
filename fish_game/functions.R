@@ -53,7 +53,9 @@ pop_dyn <- function(nyear=100, nage=5, sd=0, seed=1, M=0.1, Fc=rep(0.3,nyear), h
                     debug_mode=FALSE,
                     fish_image="fish.png",
                     catch_number_given=rep(10,nyear),
-                    shiny_mode=FALSE, label_all=FALSE){
+                    shiny_mode=FALSE, 
+                    label_all=FALSE,
+                    background_color=rgb(0.1,0.3,0.7,0.4)){
   nfish <- array(0,dim=c(nage,nyear),
                  dimnames=list(age=1:nage,year=1:nyear))
   rec_error <- array(0,dim=c(nyear),
@@ -92,8 +94,18 @@ pop_dyn <- function(nyear=100, nage=5, sd=0, seed=1, M=0.1, Fc=rep(0.3,nyear), h
         }
         else{ catch_number[i-1] <- catch_number_given[i-1] }
         if(is.na(catch_number[i-1])) break()
+        if(catch_number[i-1]>sum(nfish[,i-1])){
+          g1 <- g2 <- ggplot() + 
+            theme_solid()+scale_colour_pander() + 
+            theme(plot.background = element_rect(fill = "gray")) 
+          g1 <- g1 + geom_image(data=tibble(x=1,y=1,img="extinction.png"),aes(x=x, y=y, image=img),size=1,asp=3)
+          break         
+         }
         Fc[i-1] <- caa.est.mat(nfish[,i-1],rep(1,nage),rep(1,nage),rep(M,nage),
                                catch_number[i-1],Pope=FALSE,set_max1=TRUE)$x
+      }
+      if(!isTRUE(interactive)){
+        catch_number[i-1] <- sum(Fc[i-1]/(Fc[i-1]+M) * nfish[,i-1] * (1-exp(-Fc[i-1]-M)))
       }
       # forward cal
       for(a in 2:nage){
@@ -108,10 +120,6 @@ pop_dyn <- function(nyear=100, nage=5, sd=0, seed=1, M=0.1, Fc=rep(0.3,nyear), h
     
     # plot
     if(isTRUE(interactive)){
-      if(sum(nfish[,i])<0.001){
-        ggplot() + theme(plot.background = element_rect(fill = "skyblue"))
-        stop("Extinction!")    
-      }
       # fish distribution
       dat <- tibble(age=1:nage,fish=nfish[,i])
       fish_dist <- purrr::map(1:nrow(dat),
@@ -131,7 +139,7 @@ pop_dyn <- function(nyear=100, nage=5, sd=0, seed=1, M=0.1, Fc=rep(0.3,nyear), h
                    aes(x=x, y=y, image=image),asp=3, size=0.13) +
         coord_cartesian(xlim=c(0,xngrid+1)*10, ylim=c(0,yngrid+1)*10) +
         theme_solid()+scale_colour_pander() +              
-        theme(plot.background = element_rect(fill = rgb(0.1,0.3,0.7,0.4))) 
+        theme(plot.background = element_rect(fill = background_color)) 
       
       # dotplot of catch
       ymax <- 40
@@ -148,7 +156,7 @@ pop_dyn <- function(nyear=100, nage=5, sd=0, seed=1, M=0.1, Fc=rep(0.3,nyear), h
         geom_point(aes(x=year,y=catch+0.1), size=1, col="black", shape =19) +
         coord_cartesian(ylim=c(-0.5,ymax+0.5),xlim=c(1.5,nyear+0.5))+
         theme_solid()+scale_colour_pander() +              
-        theme(plot.background = element_rect(fill = rgb(0.1,0.3,0.7,0.4)),
+        theme(plot.background = element_rect(fill = background_color),
               legend.position="none")
       
       #          g1 <- g1 + geom_label(data=tibble(x=xngrid*10/2, y=yngrid*10*0.9, label=str_c(i,"年め: 魚の数 ", round(sum(nfish[,i])), "匹")),
@@ -156,7 +164,7 @@ pop_dyn <- function(nyear=100, nage=5, sd=0, seed=1, M=0.1, Fc=rep(0.3,nyear), h
                             mapping=aes(x=x,y=y,label=label), size=7,
                             fill=rgb(0.1,0.3,0.7,0.4), col="white")
       
-      g2 <- g2+ geom_label(data=tibble(x=nyear/2, y=ymax, label=str_c("Total catch: ", sum(catch_number))),
+      g2 <- g2+ geom_label(data=tibble(x=nyear/2+1, y=ymax, label=str_c("Total catch: ", sum(catch_number))),
                            mapping=aes(x=x,y=y,label=label), size=7,
                            fill=rgb(0.1,0.3,0.7,0.4), col="white")
       
@@ -176,7 +184,8 @@ pop_dyn <- function(nyear=100, nage=5, sd=0, seed=1, M=0.1, Fc=rep(0.3,nyear), h
       geom_point(aes(x=x,y=y))
   }
   ssb <- colSums(nfish[-1:-2,])
-  res <- tibble::lst(nfish,ssb,g1,catch_number)
+  biom <- colSums(nfish)
+  res <- tibble::lst(nfish,ssb,g1,catch_number,Fc,biom)
   if(isTRUE(shiny_mode)) res$g2 <- g2
   return(res)
   
@@ -190,5 +199,20 @@ pop0 <- pop_dyn(Fc=rep(0,100),R0=10,M=M,nage=nage,nyear=100,init_number=30)
 
 R0 <- 10*120/colSums(pop0$nfish)[100] # determin R0
 pop0 <- pop_dyn(Fc=rep(0,100),R0=R0,M=M,nage=nage,nyear=100,init_number=30)
+
+# calc Fmsy
+x <- optimize(function(x)  pop_dyn(Fc=rep(x,100),R0=R0,M=M,nage=nage,nyear=100,init_number=30)$catch_number[99],
+         c(0,1), maximum=TRUE)
+pop_msy <- pop_dyn(Fc=rep(x$maximum,100),R0=R0,M=M,nage=nage,nyear=100,init_number=30)
+MSY_15year <- sum(pop_msy$catch_number[1:14])
+Fmsy <- x$maximum
+Bmsy <- sum(pop_msy$nfish[,100])
+
 init_number <- pop0$nfish[,100]
 
+#res <- pop_dyn(Fc=rep(0,100),R0=R0,M=M,nage=nage,nyear=nyear,init_number=init_number,
+               #interactive=TRUE,debug_mode=TRUE,shiny_mode=TRUE,
+#               fish_image="fish_isaki.png",xngrid=15,yngrid=8,
+               #catch_number_given=rep(10,15))
+
+             
